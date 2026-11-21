@@ -1,0 +1,168 @@
+# Builds the apps of a project, checks their versions and publishes them to an S3 compatible bucket, GitHub Pages or both.
+# Call it from a workflow of the project, see the README.
+name: Publish apps
+
+on:
+  workflow_call:
+    inputs:
+      target:
+        description: 'Where to publish on pushes to the default branch: s3, pages or both'
+        type: string
+        default: s3
+      apps_dir:
+        description: The folder of the apps
+        type: string
+        default: Apps
+      tt_path:
+        description: The tt.py of the project
+        type: string
+        default: tt.py
+      esp_idf_version:
+        type: string
+        default: v6.1
+      publish_ref:
+        description: The ref that publishes. Other refs only build.
+        type: string
+        default: refs/heads/main
+      warm_cache_app:
+        description: An app to build first, so the others restore its compiler cache. Pick one that targets every ESP32 platform.
+        type: string
+        default: ''
+      bucket:
+        type: string
+        default: tactility
+      endpoint_url:
+        description: The endpoint of the S3 service. Empty uses the R2 endpoint of the CDN_ID secret, or else AWS S3.
+        type: string
+        default: ''
+      region:
+        type: string
+        default: auto
+      prefix:
+        type: string
+        default: apps
+    secrets:
+      S3_ACCESS_KEY_ID:
+        required: false
+      S3_SECRET_ACCESS_KEY:
+        required: false
+      CDN_ID:
+        description: The Cloudflare account id, for the R2 endpoint
+        required: false
+      CDN_TOKEN_NAME:
+        description: The access key id, when S3_ACCESS_KEY_ID isn't set
+        required: false
+      CDN_TOKEN_VALUE:
+        description: The secret access key, when S3_SECRET_ACCESS_KEY isn't set
+        required: false
+
+jobs:
+  CheckVersionBumps:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/checkout@v4
+        with:
+          repository: TactilityProject/TactilityAppPublisher
+          path: .apppublisher
+          persist-credentials: false
+      - name: Check version bumps
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: python3 .apppublisher/apppublisher.py check-versions "origin/$BASE_REF" --apps-dir "${{ inputs.apps_dir }}"
+  GenerateAppMatrix:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: TactilityProject/TactilityAppPublisher
+          path: .apppublisher
+          persist-credentials: false
+      - id: set-matrix
+        run: python3 .apppublisher/apppublisher.py matrix --apps-dir "${{ inputs.apps_dir }}"
+  WarmBuildCache:
+    runs-on: ubuntu-latest
+    if: inputs.warm_cache_app != ''
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: TactilityProject/TactilityAppPublisher/.github/actions/build-app@main
+        with:
+          app_name: ${{ inputs.warm_cache_app }}
+          apps_dir: ${{ inputs.apps_dir }}
+          tt_path: ${{ inputs.tt_path }}
+          esp_idf_version: ${{ inputs.esp_idf_version }}
+          save_cache: 'true'
+          # The Build matrix builds this app too and uploads its artifact
+          upload_artifact: 'false'
+  Build:
+    runs-on: ubuntu-latest
+    needs: [GenerateAppMatrix, WarmBuildCache]
+    if: ${{ !cancelled() && !failure() }}
+    strategy:
+      matrix: ${{ fromJSON(needs.GenerateAppMatrix.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: TactilityProject/TactilityAppPublisher/.github/actions/build-app@main
+        with:
+          app_name: ${{ matrix.app_name }}
+          apps_dir: ${{ inputs.apps_dir }}
+          tt_path: ${{ inputs.tt_path }}
+          esp_idf_version: ${{ inputs.esp_idf_version }}
+  Bundle:
+    runs-on: ubuntu-latest
+    needs: [Build]
+    outputs:
+      sdk_version: ${{ steps.release.outputs.sdk_version }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: release
+        uses: TactilityProject/TactilityAppPublisher/.github/actions/release-apps@main
+  PublishS3:
+    runs-on: ubuntu-latest
+    needs: [Bundle]
+    if: github.event_name == 'push' && github.ref == inputs.publish_ref && (inputs.target == 's3' || inputs.target == 'both')
+    steps:
+      - uses: TactilityProject/TactilityAppPublisher/.github/actions/publish-s3@main
+        with:
+          sdk_version: ${{ needs.Bundle.outputs.sdk_version }}
+          bucket: ${{ inputs.bucket }}
+          prefix: ${{ inputs.prefix }}
+          endpoint_url: ${{ inputs.endpoint_url }}
+          region: ${{ inputs.region }}
+          access_key_id: ${{ secrets.S3_ACCESS_KEY_ID || secrets.CDN_TOKEN_NAME }}
+          secret_access_key: ${{ secrets.S3_SECRET_ACCESS_KEY || secrets.CDN_TOKEN_VALUE }}
+          cdn_id: ${{ secrets.CDN_ID }}
+  BuildPages:
+    runs-on: ubuntu-latest
+    needs: [Bundle]
+    if: github.event_name == 'push' && github.ref == inputs.publish_ref && (inputs.target == 'pages' || inputs.target == 'both')
+    steps:
+      - uses: TactilityProject/TactilityAppPublisher/.github/actions/publish-pages@main
+        with:
+          sdk_version: ${{ needs.Bundle.outputs.sdk_version }}
+          prefix: ${{ inputs.prefix }}
+  DeployPages:
+    runs-on: ubuntu-latest
+    needs: [BuildPages]
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

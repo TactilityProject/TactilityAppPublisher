@@ -1,0 +1,31 @@
+name: Release apps
+
+outputs:
+  sdk_version:
+    description: 'Common SDK version shared by all bundled apps'
+    value: ${{ steps.release.outputs.sdk_version }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: 'Download app artifacts'
+      uses: actions/download-artifact@v4
+      with:
+        path: downloaded_apps
+    - name: 'Copy apps to release_files/'
+      shell: bash
+      run: |
+        mkdir -p release_files
+        rsync -av downloaded_apps/*/*.app release_files/
+    - name: 'Create the release files'
+      id: release
+      shell: bash
+      run: |
+        python "${{ github.action_path }}/../../../apppublisher.py" release release_files/ --sdk-version-file sdk_version.txt
+        echo "sdk_version=$(cat sdk_version.txt)" >> "$GITHUB_OUTPUT"
+    - name: 'Upload Artifact'
+      uses: actions/upload-artifact@v4
+      with:
+        name: 'release-files'
+        path: release_files/
+        retention-days: 30

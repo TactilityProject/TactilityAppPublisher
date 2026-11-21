@@ -1,0 +1,26 @@
+name: Prepare GitHub Pages
+
+inputs:
+  sdk_version:
+    description: The SDK version, which is a path segment of the site
+    required: true
+  prefix:
+    description: The folder in the site
+    required: false
+    default: apps
+
+runs:
+  using: 'composite'
+  steps:
+    - name: 'Download release files'
+      uses: actions/download-artifact@v4
+      with:
+        name: 'release-files'
+        path: release_files
+    - name: 'Create the site'
+      shell: bash
+      run: python "${{ github.action_path }}/../../../apppublisher.py" publish pages release_files --sdk "${{ inputs.sdk_version }}" --out site --prefix "${{ inputs.prefix }}"
+    - name: 'Upload the site'
+      uses: actions/upload-pages-artifact@v3
+      with:
+        path: site
