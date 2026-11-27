@@ -14,6 +14,13 @@ def is_index_file(file_name: str):
     return file_name == 'apps.json' or file_name == 'index.json' or re.fullmatch(r'list[_-].*\d+\.json', file_name) is not None
 
 
+def get_upload_args(file_name: str):
+    """The JSON files change with every publish and are small, so the CDN only keeps them for a minute"""
+    if file_name.endswith(".json"):
+        return {"CacheControl": "public, max-age=60"}
+    return {}
+
+
 def get_endpoint_url(endpoint_url=None):
     """The endpoint option, else S3_ENDPOINT_URL, else the R2 endpoint of the account in CDN_ID. @return None for AWS S3"""
     endpoint_url = endpoint_url or os.environ.get("S3_ENDPOINT_URL")
@@ -51,6 +58,6 @@ def publish_s3(path, sdk_version, bucket=DEFAULT_BUCKET, prefix=DEFAULT_PREFIX, 
         object_path = f"{prefix}/{sdk_version}/{file_name}"
         print(f"[{counter}/{total}] Uploading {file_name} to {object_path}")
         try:
-            s3.upload_file(os.path.join(path, file_name), bucket, object_path)
+            s3.upload_file(os.path.join(path, file_name), bucket, object_path, ExtraArgs=get_upload_args(file_name))
         except Exception as e:
             sys.exit(f"Failed to upload {file_name}: {e}")

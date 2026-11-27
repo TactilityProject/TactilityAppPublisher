@@ -8,6 +8,7 @@ import sys
 from apppublisher.s3 import DEFAULT_BUCKET, DEFAULT_PREFIX, DEFAULT_REGION, publish_s3
 from apppublisher.matrix import matrix
 from apppublisher.pages import publish_pages
+from apppublisher.purge import DEFAULT_BASE_URL, purge
 from apppublisher.release import release
 from apppublisher.versions import bump, check
 
@@ -47,6 +48,12 @@ def main():
     pages.add_argument("--out", required=True, help="the site folder")
     pages.add_argument("--prefix", default=DEFAULT_PREFIX)
 
+    command = commands.add_parser("purge-cache", help="purge the Cloudflare CDN cache of the published files, never fails (env: CLOUDFLARE_ZONE_ID, CLOUDFLARE_PURGE_CACHE_TOKEN)")
+    command.add_argument("directory")
+    command.add_argument("--sdk", required=True, help="the SDK version, which is a path segment")
+    command.add_argument("--prefix", default=DEFAULT_PREFIX)
+    command.add_argument("--base-url", default=DEFAULT_BASE_URL, help="the address that the CDN serves the bucket at")
+
     args = parser.parse_args()
     if args.command == "matrix":
         matrix(args.apps_dir)
@@ -56,6 +63,8 @@ def main():
         sys.exit(bump(args.component, args.apps_dir))
     elif args.command == "release":
         release(args.directory, args.sdk_version_file)
+    elif args.command == "purge-cache":
+        purge(args.directory, args.sdk, args.prefix, args.base_url)
     elif args.target == "s3":
         publish_s3(args.directory, args.sdk, args.bucket, args.prefix, args.index_only, args.endpoint_url, args.region)
     else:

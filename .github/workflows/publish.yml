@@ -55,6 +55,12 @@ on:
       CDN_TOKEN_VALUE:
         description: The secret access key, when S3_SECRET_ACCESS_KEY isn't set
         required: false
+      CLOUDFLARE_ZONE_ID:
+        description: The Cloudflare zone of the CDN, for purging its cache after an upload
+        required: false
+      CLOUDFLARE_PURGE_CACHE_TOKEN:
+        description: A Cloudflare API token with the Cache Purge permission. Without it the cache isn't purged.
+        required: false
 
 jobs:
   CheckVersionBumps:
@@ -145,6 +151,8 @@ jobs:
           access_key_id: ${{ secrets.S3_ACCESS_KEY_ID || secrets.CDN_TOKEN_NAME }}
           secret_access_key: ${{ secrets.S3_SECRET_ACCESS_KEY || secrets.CDN_TOKEN_VALUE }}
           cdn_id: ${{ secrets.CDN_ID }}
+          cloudflare_zone_id: ${{ secrets.CLOUDFLARE_ZONE_ID }}
+          cloudflare_purge_cache_token: ${{ secrets.CLOUDFLARE_PURGE_CACHE_TOKEN }}
   BuildPages:
     runs-on: ubuntu-latest
     needs: [Bundle]

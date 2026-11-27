@@ -7,7 +7,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from apppublisher.s3 import get_endpoint_url, is_index_file
+from apppublisher.purge import get_purge_urls, purge
+from apppublisher.s3 import get_endpoint_url, get_upload_args, is_index_file
 from apppublisher.pages import publish_pages
 from apppublisher.release import PAGE_SIZE, get_list_file_name, write_list_pages
 from apppublisher.versions import bump_version
@@ -71,6 +72,27 @@ class S3Test(unittest.TestCase):
         finally:
             for name, value in keep.items():
                 os.environ.pop(name, None)
+                if value is not None:
+                    os.environ[name] = value
+
+
+    def test_json_files_are_cached_briefly(self):
+        self.assertEqual(get_upload_args("index.json"), {"CacheControl": "public, max-age=60"})
+        self.assertEqual(get_upload_args("test.app-1.app"), {})
+
+
+class PurgeTest(unittest.TestCase):
+    def test_urls(self):
+        urls = get_purge_urls(["b.json", "a.app"], "0.8.0", "apps", "https://cdn.example.com/")
+        self.assertEqual(urls, ["https://cdn.example.com/apps/0.8.0/a.app", "https://cdn.example.com/apps/0.8.0/b.json"])
+
+    def test_without_token_nothing_happens(self):
+        keep = {name: os.environ.pop(name, None) for name in ("CLOUDFLARE_ZONE_ID", "CLOUDFLARE_PURGE_CACHE_TOKEN")}
+        try:
+            with tempfile.TemporaryDirectory() as directory:
+                purge(directory, "0.8.0", "apps")
+        finally:
+            for name, value in keep.items():
                 if value is not None:
                     os.environ[name] = value
 

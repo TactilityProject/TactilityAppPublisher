@@ -61,6 +61,8 @@ The older secrets of Cloudflare R2 still work: `CDN_TOKEN_NAME` and `CDN_TOKEN_V
 
 The files go to `<prefix>/<sdk version>/` in the bucket. The packages, details and icons are uploaded first and the index files last. The bucket has to serve the files publicly, for example through a CDN or a public bucket URL. Other storage APIs (Azure Blob, Bunny Storage and so on) are not supported.
 
+The JSON files are uploaded with `Cache-Control: public, max-age=60`. With the secrets `CLOUDFLARE_ZONE_ID` and `CLOUDFLARE_PURGE_CACHE_TOKEN` (an API token with the Zone > Cache Purge permission), the Cloudflare cache of the uploaded files is purged after the upload. Without them, or when the purge fails, the job only prints a warning.
+
 The workflow and its actions are used at `@main`. Fork the repository or change the `@main` of the actions in `publish.yml` to pin a version.
 
 ## Use it locally
@@ -75,6 +77,8 @@ python apppublisher.py release <folder with .app files>
 python apppublisher.py publish s3 <folder> --sdk <version> [--endpoint-url <url>] [--region <region>]
                                   # env: S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY, S3_ENDPOINT_URL
 python apppublisher.py publish pages <folder> --sdk <version> --out <site folder>
+python apppublisher.py purge-cache <folder> --sdk <version> [--prefix apps] [--base-url https://cdn.tactilityproject.org]
+                                  # env: CLOUDFLARE_ZONE_ID, CLOUDFLARE_PURGE_CACHE_TOKEN
 ```
 
 `release` runs in a git repository, as it stores the commit hash. It renames the `.app` files to `<app id>-<version code>.app` and writes the catalog files next to them, then `publish` uploads or copies the folder.

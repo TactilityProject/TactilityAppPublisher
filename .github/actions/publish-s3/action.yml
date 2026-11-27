@@ -30,6 +30,18 @@ inputs:
     description: The Cloudflare account id, for the R2 endpoint when there is no endpoint_url
     required: false
     default: ''
+  cdn_base_url:
+    description: The address that the CDN serves the bucket at, for purging its cache
+    required: false
+    default: https://cdn.tactilityproject.org
+  cloudflare_zone_id:
+    description: The Cloudflare zone of the CDN. Without it the cache isn't purged.
+    required: false
+    default: ''
+  cloudflare_purge_cache_token:
+    description: A Cloudflare API token with the Cache Purge permission. Without it the cache isn't purged.
+    required: false
+    default: ''
 
 runs:
   using: 'composite'
@@ -49,3 +61,10 @@ runs:
         S3_SECRET_ACCESS_KEY: ${{ inputs.secret_access_key }}
         CDN_ID: ${{ inputs.cdn_id }}
       run: python "${{ github.action_path }}/../../../apppublisher.py" publish s3 release_files --sdk "${{ inputs.sdk_version }}" --bucket "${{ inputs.bucket }}" --prefix "${{ inputs.prefix }}" --region "${{ inputs.region }}" ${{ inputs.endpoint_url != '' && format('--endpoint-url "{0}"', inputs.endpoint_url) || '' }}
+    # Never fails the job: without the token or on an API error, the files refresh when their cache expires
+    - name: 'Purge CDN cache'
+      shell: bash
+      env:
+        CLOUDFLARE_ZONE_ID: ${{ inputs.cloudflare_zone_id }}
+        CLOUDFLARE_PURGE_CACHE_TOKEN: ${{ inputs.cloudflare_purge_cache_token }}
+      run: python "${{ github.action_path }}/../../../apppublisher.py" purge-cache release_files --sdk "${{ inputs.sdk_version }}" --prefix "${{ inputs.prefix }}" --base-url "${{ inputs.cdn_base_url }}" || true
